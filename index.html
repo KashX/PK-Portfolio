@@ -80,11 +80,11 @@
         console.log(`App ID: ${appId}. Firebase Config Status: ${firebaseConfig ? 'Loaded' : 'Missing'}.`);
         // --------------------------------------------------------
 
-        // --- MODEL URLS (User Provided Google Drive Sharing Links) ---
-        // WARNING: These are sharing links, not direct file URLs. They will fail to load
-        // and the application will fall back to the default colored geometry.
-        const CHARACTER_URL = 'https://drive.google.com/file/d/1H48lwoFp49qCUpfYxrQPm7uUB48_Fc94/view?usp=sharing';
-        const SHELF_URL = 'https://drive.google.com/file/d/1I1dRCMa5xAr1y0_4q-LvkJdd7U9ZLYvf/view?usp=drive_link';
+        // --- MODEL URLS (Set to RAW GitHub content links) ---
+        // These URLs point to the raw GLB files in the 'models' folder of your 'PK-Portfolio' repository.
+        const BASE_URL = 'https://raw.githubusercontent.com/KashX/PK-Portfolio/main/models/';
+        const CHARACTER_URL = BASE_URL + 'character.glb';
+        const SHELF_URL = BASE_URL + 'shelf.glb';
         // -------------------------------------------------------------
 
         let scene, camera, renderer, character;
@@ -158,7 +158,8 @@
             }, (xhr) => {
                 // Progress tracking: (xhr.loaded / xhr.total) * 100 + '% loaded'
             }, (error) => {
-                console.error(`Error loading model from ${path}. Falling back to default geometry. REASON: The URL must be a direct link to the GLB file (not a file viewing/sharing page).`, error);
+                // IMPORTANT: The error below confirms if the model failed to load (e.g., due to 404 or CORS issues).
+                console.error(`Error loading model from ${path}. Falling back to default geometry.`, error);
                 
                 // Use the fallback creator function
                 fallbackCreator();
