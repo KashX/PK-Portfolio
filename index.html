@@ -3,34 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Shelf Portfolio</title>
+    <title>3D Circular Portfolio</title>
     <!-- Tailwind CSS for UI -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #1a1a2e; }
         canvas { display: block; }
-        /* Custom scrollbar for modal content */
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #282846;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #6c63ff;
-            border-radius: 4px;
-        }
+        /* Style for the scroll container if needed, though we are using the window scroll */
     </style>
     
-    <!-- FIX: Load THREE.js and GLTFLoader using standard script tags (non-module) -->
-    <!-- This resolves "Failed to resolve module specifier" errors by using global scope -->
+    <!-- Load THREE.js and GLTFLoader using standard script tags (non-module) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
 </head>
 <body>
 
-    <!-- 2D UI Overlay (Enter Screen, Profile Modal, Loading) -->
+    <!-- 2D UI Overlay (Enter Screen, Loading) -->
     <div id="ui-container" class="absolute inset-0 z-10 pointer-events-none">
 
         <!-- Initial Enter Screen -->
@@ -38,41 +27,17 @@
             <h1 class="text-4xl sm:text-6xl font-extrabold text-white mb-6 animate-pulse">
                 [ My 3D Portfolio ]
             </h1>
-            <p id="loading-status" class="text-white text-lg mb-4">Loading models... 0%</p>
+            <p id="loading-status" class="text-white text-lg mb-4">Loading environment model... 0%</p>
             <button id="enter-button" disabled class="px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-2xl transition-all duration-300 transform pointer-events-auto text-xl opacity-50 cursor-not-allowed">
-                Enter
+                Enter World
             </button>
         </div>
-
-        <!-- Profile Information Modal -->
-        <div id="profile-modal" class="hidden fixed inset-0 flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm pointer-events-auto">
-            <div class="bg-gray-800 text-white p-6 sm:p-8 rounded-xl shadow-2xl max-w-lg w-full transform transition-all duration-300 scale-95 opacity-0 custom-scrollbar" style="max-height: 80vh; overflow-y: auto;">
-                <div class="flex justify-between items-start mb-4">
-                    <h2 id="modal-title" class="text-3xl font-bold text-indigo-400">Loading...</h2>
-                    <button id="close-modal-button" class="text-gray-400 hover:text-white transition-colors text-2xl">
-                        &times;
-                    </button>
-                </div>
-                <div id="modal-content" class="space-y-4 text-gray-300 text-sm sm:text-base">
-                    <!-- Content injected here by JS -->
-                    <p>Information about this section will appear here.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Instructions -->
-        <div id="instructions" class="fixed bottom-0 left-0 p-4 text-xs sm:text-sm text-white bg-black/50 rounded-tr-xl hidden">
-            <span class="font-bold text-indigo-400">Controls:</span> &larr; Left Arrow | &rarr; Right Arrow to Move
-        </div>
-
     </div>
 
     <!-- Three.js will render into the body -->
 
-    <!-- Main application script - changed from type="module" -->
+    <!-- Main application script -->
     <script>
-        // NOTE: THREE and GLTFLoader are now globally available due to the script tags in the head.
-        
         // --- Firebase/Auth Setup (Mandatory Globals Check) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
@@ -80,51 +45,24 @@
         console.log(`App ID: ${appId}. Firebase Config Status: ${firebaseConfig ? 'Loaded' : 'Missing'}.`);
         // --------------------------------------------------------
 
-        // --- MODEL URLS (Set to RAW GitHub content links) ---
-        // These URLs point to the raw GLB files in the 'models' folder of your 'PK-Portfolio' repository.
+        // --- MODEL URLS (Set to RAW GitHub content link) ---
         const BASE_URL = 'https://raw.githubusercontent.com/KashX/PK-Portfolio/main/models/';
-        const CHARACTER_URL = BASE_URL + 'character.glb';
-        const SHELF_URL = BASE_URL + 'shelf.glb';
+        const ENVIRONMENT_URL = BASE_URL + 'Environment.glb';
         // -------------------------------------------------------------
 
-        let scene, camera, renderer, character;
+        let scene, camera, renderer, environmentGroup;
         let isGameActive = false;
         let cameraAnimationProgress = 0;
-        const SHELF_WIDTH = 100;
-        const SHELF_DEPTH = 30;
-        const SHELF_HEIGHT = 2;
-        // Constant for character width/depth reference (used for spacing/fall checks)
-        const CHARACTER_SIZE = 3; 
-        const GRAVITY = -0.98;
-        const MOVE_SPEED = 0.5;
-        const SHELF_GAP = 40;
         
-        // UPDATED: Camera Z distance increased for a wider view
-        const CAMERA_Z = 65; 
-        const CAMERA_Y_OFFSET = 5; // Vertical offset above the shelf adjusted
-
-        const SHELVES = [
-            { y: 0, content: { title: "About Me", detail: "I am a full-stack developer specializing in modern web technologies, AI integration, and immersive experiences. I love building things that look and feel great." } },
-            { y: -SHELF_GAP * 1, content: { title: "Skills & Tech Stack", detail: "Expert in JavaScript, React, Node.js, and TypeScript. Proficient with 3D frameworks like Three.js and Babylon.js. Experienced with cloud platforms (GCP/AWS) and databases (Firestore/MongoDB)." } },
-            { y: -SHELF_GAP * 2, content: { title: "Recent Projects", detail: "Developed a real-time collaborative code editor, a procedural terrain generator using WebGL, and a large-scale data visualization dashboard." } },
-            { y: -SHELF_GAP * 3, content: { title: "Contact & Socials", detail: "Feel free to connect! You can find me on LinkedIn (MyProfile) or send me an email at contact@example.com." } },
-        ];
-
-        let currentShelfIndex = 0;
-        let velocityY = 0;
-        let isMovingLeft = false;
-        let isMovingRight = false;
-        let isFalling = false;
-        let characterMesh = null;
+        const ENVIRONMENT_SCALE = 15; // Scaling factor for the imported model
+        
         let modelsLoaded = false;
-        const totalModels = 2;
+        const totalModels = 1;
         let loadedCount = 0;
 
         // UI elements
         const enterScreen = document.getElementById('enter-screen');
         const enterButton = document.getElementById('enter-button');
-        const profileModal = document.getElementById('profile-modal');
-        const modalContentContainer = profileModal.querySelector('.max-w-lg');
         const loadingStatus = document.getElementById('loading-status');
         
         // GLTF Loader instance
@@ -137,7 +75,7 @@
             const percent = Math.floor((loadedCount / totalModels) * 100);
             loadingStatus.textContent = isFallback 
                 ? `Loaded (${percent}%). Using fallback geometry.`
-                : `Loading models... ${percent}%`;
+                : `Loading environment model... ${percent}%`;
             
             if (loadedCount === totalModels) {
                 modelsLoaded = true;
@@ -158,10 +96,7 @@
             }, (xhr) => {
                 // Progress tracking: (xhr.loaded / xhr.total) * 100 + '% loaded'
             }, (error) => {
-                // IMPORTANT: The error below confirms if the model failed to load (e.g., due to 404 or CORS issues).
                 console.error(`Error loading model from ${path}. Falling back to default geometry.`, error);
-                
-                // Use the fallback creator function
                 fallbackCreator();
                 updateLoadingProgress(true); // Mark as loaded with fallback status
             });
@@ -169,138 +104,60 @@
 
         // --- Core 3D Setup ---
 
-        function createDefaultCharacter() {
-             // Fallback to BoxGeometry - Taller and skinnier to resemble a character placeholder
-            const characterWidth = CHARACTER_SIZE / 3; 
-            const boxHeight = CHARACTER_SIZE * 2; // Taller character placeholder
-            const geometry = new THREE.BoxGeometry(characterWidth, boxHeight, characterWidth);
-            const material = new THREE.MeshLambertMaterial({ color: 0xffa500 }); // Reddish-orange
+        function createDefaultEnvironment() {
+            // Fallback to a simple cylinder
+            const geometry = new THREE.CylinderGeometry(50, 50, 50, 32);
+            const material = new THREE.MeshLambertMaterial({ color: 0x6c63ff }); 
+            const fallbackMesh = new THREE.Mesh(geometry, material);
+            fallbackMesh.receiveShadow = true;
+            fallbackMesh.castShadow = true;
             
-            characterMesh = new THREE.Mesh(geometry, material);
-            characterMesh.castShadow = true;
-            characterMesh.userData.height = boxHeight; // Store height for collision/positioning logic
+            // Add the fallback mesh directly to the group
+            environmentGroup.add(fallbackMesh);
         }
 
-        function createDefaultShelf(shelfData, color) {
-            const geometry = new THREE.BoxGeometry(SHELF_WIDTH, SHELF_HEIGHT, SHELF_DEPTH);
-            const material = new THREE.MeshLambertMaterial({ color: color });
-            const shelf = new THREE.Mesh(geometry, material);
-            shelf.position.set(0, shelfData.y, 0);
-            shelf.receiveShadow = true;
-            scene.add(shelf);
-            shelfData.mesh = shelf;
-            return shelf;
-        }
+        function initEnvironment(model) {
+            
+            // Create a central group to hold and rotate the model
+            environmentGroup = new THREE.Group();
+            scene.add(environmentGroup);
 
-        function initCharacter(model) {
             // Check if a model was loaded successfully
             if (model) {
-                characterMesh = model;
-                characterMesh.traverse((child) => {
+                
+                // Set scale and add to group
+                model.scale.set(ENVIRONMENT_SCALE, ENVIRONMENT_SCALE, ENVIRONMENT_SCALE);
+                model.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = true;
+                        child.receiveShadow = true;
                     }
                 });
-                
-                // **FIX 1: Apply fixed scale to ensure visibility and prevent overlap with tiny models**
-                // Adjust this SCALE_FACTOR based on the size of your exported character
-                const SCALE_FACTOR = 15; 
-                characterMesh.scale.set(SCALE_FACTOR, SCALE_FACTOR, SCALE_FACTOR); 
-                
-                // The character's collision height is based on the scaled size
-                const charHeight = CHARACTER_SIZE * SCALE_FACTOR; 
-                characterMesh.userData.height = charHeight; 
-                
-                // Reposition the model's pivot (if needed) so its feet are near Y=0
-                // If the model's pivot is centered, this pushes it up half its height.
-                // You may need to adjust this (e.g., to -charHeight/2) based on your model's pivot point.
-                characterMesh.position.y = 0; 
+                environmentGroup.add(model);
                 
             } else {
                 // If model failed to load, use the fallback
-                createDefaultCharacter();
+                createDefaultEnvironment();
             }
 
-            // The characterMesh must be added before its position can be set
-            scene.add(characterMesh);
-            character = characterMesh.position;
-            
-            // Use the actual height (either scaled GLB or fallback box height)
-            const charHeight = characterMesh.userData.height || CHARACTER_SIZE * 2; 
-            const characterHalfHeight = charHeight / 2;
-            
-            // Set initial position based on the character height
-            character.set(
-                -SHELF_WIDTH / 2 + CHARACTER_SIZE, 
-                SHELVES[0].y + SHELF_HEIGHT / 2 + characterHalfHeight, // Place character feet on the shelf
-                0
-            );
+            // Set initial rotation to make it visible right away
+            environmentGroup.rotation.y = Math.PI / 4;
         }
 
-        function initShelves(model) {
-            const shelfColors = [0x6c63ff, 0x4834d4, 0x303960, 0x2c2c54];
-
-            SHELVES.forEach((shelfData, index) => {
-                if (model) {
-                    // Clone the loaded GLB model for each shelf
-                    const shelfClone = model.clone();
-                    
-                    // **FIX 2: Apply fixed scale to ensure visibility and span the width**
-                    // Scale X/Z to match the defined SHELF_WIDTH/DEPTH (100/30)
-                    // Scale Y is set higher (e.g., 5x) to give the shelf a visible thickness 
-                    const SCALE_X = SHELF_WIDTH; 
-                    const SCALE_Y = SHELF_HEIGHT; 
-                    const SCALE_Z = SHELF_DEPTH; 
-
-                    shelfClone.scale.set(SCALE_X, SCALE_Y, SCALE_Z); 
-                    
-                    // Positioning the shelf model: set Y to the shelf's center. 
-                    // Since SCALE_Y is applied, the shelf will be centered on shelfData.y
-                    shelfClone.position.set(0, shelfData.y, 0);
-                    
-                    shelfClone.traverse((child) => {
-                        if (child.isMesh) {
-                            child.receiveShadow = true;
-                        }
-                    });
-                    scene.add(shelfClone);
-                    shelfData.mesh = shelfClone;
-                } else {
-                    // Use fallback box geometry
-                    createDefaultShelf(shelfData, shelfColors[index % shelfColors.length]);
-                }
-            });
-        }
-
-        function createWalls() {
-            // UPDATED: Back Wall - Increased size to ensure full screen coverage for wider camera view
-            const totalHeight = SHELVES.length * SHELF_GAP + 150; 
-            const totalWidth = SHELF_WIDTH + 200; 
-            
-            const wallGeometry = new THREE.PlaneGeometry(totalWidth, totalHeight);
-            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0x3d3d5c, side: THREE.DoubleSide });
-            const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
-            
-            // Position adjusted to center the now-larger wall
-            backWall.position.set(
-                0, 
-                -SHELVES.length * SHELF_GAP / 2 + SHELF_GAP / 2 - 5, 
-                -SHELF_DEPTH / 2 - 0.5
-            );
-            backWall.receiveShadow = true;
-            scene.add(backWall);
-        }
 
         function init() {
             // Scene
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1a1a2e); // Dark blue/purple background
+            scene.background = new THREE.Color(0x1a1a2e); // Dark background
 
             // Camera
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            // Initial position for cinematic intro
-            camera.position.set(0, 100, CAMERA_Z + 55); 
-
+            
+            // Fixed 45-degree down tilt view
+            const cameraDistance = 200;
+            camera.position.set(cameraDistance, cameraDistance * 0.7, cameraDistance);
+            camera.lookAt(0, 0, 0); 
+            
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -313,31 +170,22 @@
             scene.add(ambientLight);
 
             const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
-            directionalLight.position.set(5, 50, 50);
+            directionalLight.position.set(200, 300, 200);
+            directionalLight.target.position.set(0, 0, 0);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.width = 2048;
             directionalLight.shadow.mapSize.height = 2048;
-            directionalLight.shadow.camera.near = 0.5;
-            directionalLight.shadow.camera.far = 500;
-            directionalLight.shadow.camera.left = -100;
-            directionalLight.shadow.camera.right = 100;
-            directionalLight.shadow.camera.top = 100;
-            directionalLight.shadow.camera.bottom = -100;
             scene.add(directionalLight);
 
-            // Re-enable model loading logic
-            // The fallback functions (createDefaultCharacter/createDefaultShelf) are passed as the third argument
-            loadModel(CHARACTER_URL, initCharacter, createDefaultCharacter); 
-            loadModel(SHELF_URL, initShelves, () => initShelves(null)); // Pass null to initShelves to trigger the inner fallback
-
-            createWalls();
+            // Load the environment model (success or failure triggers modelLoaded flag)
+            loadModel(ENVIRONMENT_URL, initEnvironment, createDefaultEnvironment); 
 
             // Event Listeners
             window.addEventListener('resize', onWindowResize);
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
             enterButton.addEventListener('click', handleEnter);
-            document.getElementById('close-modal-button').addEventListener('click', hideProfileModal);
+            
+            // Add scroll listener for rotation
+            window.addEventListener('wheel', onMouseWheel);
         }
 
         // --- Event Handlers ---
@@ -348,227 +196,48 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        function onKeyDown(event) {
-            if (!isGameActive || isFalling) return;
-            switch (event.key) {
-                case 'ArrowLeft':
-                    isMovingLeft = true;
-                    break;
-                case 'ArrowRight':
-                    isMovingRight = true;
-                    break;
-            }
-        }
+        function onMouseWheel(event) {
+            if (!isGameActive || !environmentGroup) return;
 
-        function onKeyUp(event) {
-            if (!isGameActive) return;
-            switch (event.key) {
-                case 'ArrowLeft':
-                    isMovingLeft = false;
-                    break;
-                case 'ArrowRight':
-                    isMovingRight = false;
-                    break;
-            }
+            // Prevent page scrolling when interacting with the 3D scene
+            event.preventDefault(); 
+
+            // Determine rotation speed and direction
+            // event.deltaY is positive for scrolling down (typically)
+            const rotationSpeed = event.deltaY * 0.001;
+            
+            // Rotate the environment group around the Y-axis
+            environmentGroup.rotation.y += rotationSpeed;
         }
 
         function handleEnter() {
             if (!modelsLoaded) return;
+            
             // Hide the enter screen UI
             enterScreen.style.opacity = '0';
             setTimeout(() => {
                 enterScreen.style.display = 'none';
-                document.getElementById('instructions').classList.remove('hidden');
                 isGameActive = true;
-                // No need to call animate here, it's already running for the intro
             }, 1000);
         }
 
-        function showProfileModal(shelfData) {
-            if (!profileModal.classList.contains('hidden')) return; 
-
-            document.getElementById('modal-title').textContent = shelfData.title;
-            document.getElementById('modal-content').innerHTML = `<p>${shelfData.detail}</p>`;
-
-            profileModal.classList.remove('hidden');
-            // Animate in
-            setTimeout(() => {
-                modalContentContainer.classList.remove('scale-95', 'opacity-0');
-                modalContentContainer.classList.add('scale-100', 'opacity-100');
-            }, 50);
-        }
-
-        function hideProfileModal() {
-            // Animate out
-            modalContentContainer.classList.remove('scale-100', 'opacity-100');
-            modalContentContainer.classList.add('scale-95', 'opacity-0');
-
-            setTimeout(() => {
-                profileModal.classList.add('hidden');
-            }, 300);
-        }
-
-        // --- Game Logic ---
-
-        function updateCharacterPosition(deltaTime) {
-            if (!isGameActive) return;
-
-            // Horizontal Movement only if not falling
-            if (!isFalling) {
-                if (isMovingLeft) {
-                    character.x -= MOVE_SPEED;
-                }
-                if (isMovingRight) {
-                    character.x += MOVE_SPEED;
-                }
-            }
-
-            // Simple physics: Apply gravity if falling
-            if (isFalling) {
-                velocityY += GRAVITY * deltaTime;
-                character.y += velocityY;
-            }
-
-            // --- Collision and Fall Check ---
-            const shelf = SHELVES[currentShelfIndex];
-            const halfShelfWidth = SHELF_WIDTH / 2;
-            // Use a fixed small width for collision/fall calculation
-            const characterHalfWidth = CHARACTER_SIZE / 4; 
-            const landingXOffset = CHARACTER_SIZE / 2; 
-
-            // Get character height dynamically (from userData or fallback)
-            const charHeight = characterMesh.userData.height || CHARACTER_SIZE * 2; 
-            const characterHalfHeight = charHeight / 2;
-
-            // Check if the character's center is past the edge, but ONLY if we are not already falling
-            if (!isFalling && (character.x > halfShelfWidth - characterHalfWidth || character.x < -halfShelfWidth + characterHalfWidth)) {
-                isFalling = true;
-                velocityY = 0; // Reset vertical velocity
-
-                // Determine fall direction
-                const isFallingRight = character.x > 0;
-
-                // Stop horizontal movement inputs while falling
-                isMovingLeft = false;
-                isMovingRight = false;
-
-                // --- Looping Logic ---
-                let nextShelfIndex = -1;
-                let landingSide = 'left';
-
-                if (isFallingRight) {
-                    // Falling RIGHT: lands on the next *lower* shelf's LEFT side.
-                    nextShelfIndex = currentShelfIndex + 1;
-                    if (nextShelfIndex >= SHELVES.length) {
-                        nextShelfIndex = 0; // Loop back to the top shelf
-                    }
-                    landingSide = 'left';
-
-                } else {
-                    // Falling LEFT: lands on the next *higher* shelf's RIGHT side.
-                    nextShelfIndex = currentShelfIndex - 1;
-                    if (nextShelfIndex < 0) {
-                        nextShelfIndex = SHELVES.length - 1; // Loop back to the bottom shelf
-                    }
-                    landingSide = 'right';
-                }
-                
-                // Store target data for landing check
-                character.userData.targetShelfIndex = nextShelfIndex;
-                character.userData.landingY = SHELVES[nextShelfIndex].y + SHELF_HEIGHT / 2 + characterHalfHeight;
-                character.userData.landingX = landingSide === 'left' ? -halfShelfWidth + landingXOffset : halfShelfWidth - landingXOffset;
-            }
-
-            // Check for Landing
-            if (isFalling && character.userData.targetShelfIndex !== undefined) {
-                const landingY = character.userData.landingY;
-
-                // If character has fallen past the landing height
-                if (character.y <= landingY) {
-                    // Land!
-                    isFalling = false;
-                    velocityY = 0;
-                    currentShelfIndex = character.userData.targetShelfIndex;
-
-                    // Snap position
-                    character.y = landingY;
-                    character.x = character.userData.landingX;
-                    
-                    // Clear target data
-                    character.userData.targetShelfIndex = undefined;
-                    
-                    // Trigger modal
-                    showProfileModal(SHELVES[currentShelfIndex].content);
-                }
-            }
-
-            // Keep character z position at 0
-            character.z = 0;
-        }
-
-        // --- Camera Update ---
-
-        function updateCamera(deltaTime) {
-            // FIXED CAMERA: Only moves vertically to keep the active shelf/character in view.
-            
-            let targetY;
-            if (isGameActive) {
-                // Target the current shelf's Y position + offset
-                targetY = SHELVES[currentShelfIndex].y + CAMERA_Y_OFFSET;
-                
-                // If falling, smoothly follow the character's Y position
-                if (isFalling) {
-                    targetY = character.y + CAMERA_Y_OFFSET;
-                }
-
-                // Smoothly update the camera's Y position
-                camera.position.y += (targetY - camera.position.y) * 0.05;
-                
-                // Camera X and Z positions are fixed
-                camera.position.x = 0;
-                camera.position.z = CAMERA_Z;
-
-                // Camera Look At: Look slightly below the camera's center to frame the shelf
-                camera.lookAt(0, camera.position.y - 10, 0);
-
-            } else {
-                // Initial cinematic camera animation
-                const startPos = new THREE.Vector3(0, 100, CAMERA_Z + 55);
-                const endPos = new THREE.Vector3(0, SHELVES[0].y + CAMERA_Y_OFFSET, CAMERA_Z);
-
-                cameraAnimationProgress = Math.min(cameraAnimationProgress + deltaTime * 0.5, 1);
-                
-                // Use smooth step for acceleration/deceleration
-                const t = cameraAnimationProgress * cameraAnimationProgress * (3 - 2 * cameraAnimationProgress);
-
-                camera.position.lerpVectors(startPos, endPos, t);
-                camera.lookAt(0, 0, 0);
-            }
-        }
-
-
         // --- Animation Loop ---
 
-        let lastTime = 0;
-        function animate(time) {
+        function animate() {
             requestAnimationFrame(animate);
 
-            const deltaTime = (time - lastTime) / 1000 || 0.016; 
-            lastTime = time;
-
-            if (character) {
-                updateCharacterPosition(deltaTime);
+            if (isGameActive) {
+                // No continuous rotation needed, rotation is handled by scroll
             }
             
-            updateCamera(deltaTime);
             renderer.render(scene, camera);
         }
 
         // Initialize on load
         window.onload = function () {
             init();
-            // Start the loop immediately for the loading screen and cinematic intro
-            animate(0); 
+            // Start the loop immediately
+            animate(); 
         };
     </script>
 </body>
