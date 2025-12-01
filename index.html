@@ -201,23 +201,38 @@
                         child.castShadow = true;
                     }
                 });
-                // Adjust model scale and height data for collision
-                characterMesh.scale.set(0.8, 0.8, 0.8); 
-                characterMesh.userData.height = CHARACTER_SIZE * 2; // Assume a similar height to fallback
-            } else if (!characterMesh) {
-                // If model failed to load, use the fallback created in loadModel's error handler
+                
+                // **FIX 1: Apply fixed scale to ensure visibility and prevent overlap with tiny models**
+                // Adjust this SCALE_FACTOR based on the size of your exported character
+                const SCALE_FACTOR = 15; 
+                characterMesh.scale.set(SCALE_FACTOR, SCALE_FACTOR, SCALE_FACTOR); 
+                
+                // The character's collision height is based on the scaled size
+                const charHeight = CHARACTER_SIZE * SCALE_FACTOR; 
+                characterMesh.userData.height = charHeight; 
+                
+                // Reposition the model's pivot (if needed) so its feet are near Y=0
+                // If the model's pivot is centered, this pushes it up half its height.
+                // You may need to adjust this (e.g., to -charHeight/2) based on your model's pivot point.
+                characterMesh.position.y = 0; 
+                
+            } else {
+                // If model failed to load, use the fallback
                 createDefaultCharacter();
             }
 
+            // The characterMesh must be added before its position can be set
             scene.add(characterMesh);
             character = characterMesh.position;
             
-            const charHeight = characterMesh.userData.height || CHARACTER_SIZE; 
+            // Use the actual height (either scaled GLB or fallback box height)
+            const charHeight = characterMesh.userData.height || CHARACTER_SIZE * 2; 
+            const characterHalfHeight = charHeight / 2;
             
             // Set initial position based on the character height
             character.set(
-                -SHELF_WIDTH / 2 + CHARACTER_SIZE, // Start just inside the left edge
-                SHELVES[0].y + SHELF_HEIGHT / 2 + charHeight / 2, // Place character feet on the shelf
+                -SHELF_WIDTH / 2 + CHARACTER_SIZE, 
+                SHELVES[0].y + SHELF_HEIGHT / 2 + characterHalfHeight, // Place character feet on the shelf
                 0
             );
         }
@@ -229,9 +244,20 @@
                 if (model) {
                     // Clone the loaded GLB model for each shelf
                     const shelfClone = model.clone();
-                    // Positioning the shelf model
-                    shelfClone.scale.set(100 / SHELF_WIDTH, 1, 30 / SHELF_DEPTH); 
+                    
+                    // **FIX 2: Apply fixed scale to ensure visibility and span the width**
+                    // Scale X/Z to match the defined SHELF_WIDTH/DEPTH (100/30)
+                    // Scale Y is set higher (e.g., 5x) to give the shelf a visible thickness 
+                    const SCALE_X = SHELF_WIDTH; 
+                    const SCALE_Y = SHELF_HEIGHT; 
+                    const SCALE_Z = SHELF_DEPTH; 
+
+                    shelfClone.scale.set(SCALE_X, SCALE_Y, SCALE_Z); 
+                    
+                    // Positioning the shelf model: set Y to the shelf's center. 
+                    // Since SCALE_Y is applied, the shelf will be centered on shelfData.y
                     shelfClone.position.set(0, shelfData.y, 0);
+                    
                     shelfClone.traverse((child) => {
                         if (child.isMesh) {
                             child.receiveShadow = true;
