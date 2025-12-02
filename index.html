@@ -6,20 +6,28 @@
     <title>3D Circular Portfolio</title>
     <!-- Tailwind CSS for UI -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- All CSS is now defined here -->
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #1a1a2e; }
-        canvas { display: block; }
-        /* Style for the scroll container if needed, though we are using the window scroll */
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Inter', sans-serif; 
+            background-color: #1a1a2e; 
+        }
+        canvas { 
+            display: block; 
+        }
     </style>
     
-    <!-- Load THREE.js and GLTFLoader using standard script tags (non-module) -->
+    <!-- External Libraries (THREE.js and GLTFLoader) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
 </head>
 <body>
 
-    <!-- 2D UI Overlay (Enter Screen, Loading) -->
+    <!-- 2D UI Overlay -->
     <div id="ui-container" class="absolute inset-0 z-10 pointer-events-none">
 
         <!-- Initial Enter Screen -->
@@ -32,43 +40,53 @@
                 Enter World
             </button>
         </div>
+        
+        <!-- Instructions -->
+        <div id="instructions" class="fixed bottom-0 right-0 p-4 text-xs sm:text-sm text-white bg-black/50 rounded-tl-xl hidden">
+            <span class="font-bold text-indigo-400">Controls:</span> Scroll Wheel to Rotate
+        </div>
     </div>
 
     <!-- Three.js will render into the body -->
 
     <!-- Main application script -->
     <script>
-        // --- Firebase/Auth Setup (Mandatory Globals Check) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        console.log(`App ID: ${appId}. Firebase Config Status: ${firebaseConfig ? 'Loaded' : 'Missing'}.`);
-        // --------------------------------------------------------
+        // =======================================================================
+        // I. CONFIGURATION AND GLOBAL STATE
+        // =======================================================================
 
-        // --- MODEL URLS (Set to RAW GitHub content link) ---
+        // --- Model URLS (Set to RAW GitHub content link) ---
         const BASE_URL = 'https://raw.githubusercontent.com/KashX/PK-Portfolio/main/models/';
-        const ENVIRONMENT_URL = BASE_URL + 'Environment.glb';
-        // -------------------------------------------------------------
-
+        const CACHE_BUST = new Date().getTime(); 
+        // Adding cache-buster to force the browser to check for the latest file
+        const ENVIRONMENT_URL = BASE_URL + 'Environment.glb?v=' + CACHE_BUST;
+        
+        // --- 3D Scene Constants ---
+        const ENVIRONMENT_SCALE = 30; // Scale factor for the imported GLB model
+        const CAMERA_DISTANCE = 500;  // Distance from the center of the scene
+        const ROTATION_FACTOR = 0.0002; // Sensitivity of the scroll rotation
+        const CONTINUOUS_ROTATION_SPEED = -0.001; // Constant speed for background rotation
+        // --- Global Variables ---
         let scene, camera, renderer, environmentGroup;
         let isGameActive = false;
-        let cameraAnimationProgress = 0;
         
-        const ENVIRONMENT_SCALE = 15; // Scaling factor for the imported model
-        
+        // --- Loading State ---
         let modelsLoaded = false;
         const totalModels = 1;
         let loadedCount = 0;
 
-        // UI elements
+        // --- DOM Elements ---
         const enterScreen = document.getElementById('enter-screen');
         const enterButton = document.getElementById('enter-button');
         const loadingStatus = document.getElementById('loading-status');
+        const instructions = document.getElementById('instructions');
         
         // GLTF Loader instance
         const loader = new THREE.GLTFLoader();
 
-        // --- Model Loading Helpers ---
+        // =======================================================================
+        // II. UTILITY FUNCTIONS (Loading and UI)
+        // =======================================================================
 
         function updateLoadingProgress(isFallback = false) {
             loadedCount++;
@@ -89,43 +107,36 @@
         }
 
         function loadModel(path, successCallback, fallbackCreator) {
-            
             loader.load(path, (gltf) => {
                 successCallback(gltf.scene);
                 updateLoadingProgress(false);
             }, (xhr) => {
-                // Progress tracking: (xhr.loaded / xhr.total) * 100 + '% loaded'
+                // Progress tracking (optional)
             }, (error) => {
                 console.error(`Error loading model from ${path}. Falling back to default geometry.`, error);
                 fallbackCreator();
-                updateLoadingProgress(true); // Mark as loaded with fallback status
+                updateLoadingProgress(true); 
             });
         }
 
-        // --- Core 3D Setup ---
-
         function createDefaultEnvironment() {
-            // Fallback to a simple cylinder
+            // Fallback to a simple, clearly visible cylinder
             const geometry = new THREE.CylinderGeometry(50, 50, 50, 32);
-            const material = new THREE.MeshLambertMaterial({ color: 0x6c63ff }); 
+            const material = new THREE.MeshLambertMaterial({ color: 0x34d95b }); 
             const fallbackMesh = new THREE.Mesh(geometry, material);
             fallbackMesh.receiveShadow = true;
             fallbackMesh.castShadow = true;
             
-            // Add the fallback mesh directly to the group
             environmentGroup.add(fallbackMesh);
         }
 
         function initEnvironment(model) {
-            
             // Create a central group to hold and rotate the model
             environmentGroup = new THREE.Group();
             scene.add(environmentGroup);
 
-            // Check if a model was loaded successfully
             if (model) {
-                
-                // Set scale and add to group
+                // Apply scale and setup shadows for the loaded GLB model
                 model.scale.set(ENVIRONMENT_SCALE, ENVIRONMENT_SCALE, ENVIRONMENT_SCALE);
                 model.traverse((child) => {
                     if (child.isMesh) {
@@ -134,61 +145,63 @@
                     }
                 });
                 environmentGroup.add(model);
-                
             } else {
                 // If model failed to load, use the fallback
                 createDefaultEnvironment();
             }
 
-            // Set initial rotation to make it visible right away
+            // Set initial rotation (45 degrees) to match camera angle
             environmentGroup.rotation.y = Math.PI / 4;
         }
 
+        // =======================================================================
+        // III. 3D SCENE SETUP
+        // =======================================================================
 
         function init() {
-            // Scene
+            // --- Scene ---
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a2e); // Dark background
 
-            // Camera
+            // --- Camera ---
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+            // Fixed position for 45-degree down tilt view
+            camera.position.set(
+                CAMERA_DISTANCE, 
+                CAMERA_DISTANCE * 0.6, // Looking down
+                CAMERA_DISTANCE
+            );
+            // Adjusted lookAt to center the view better
+            camera.lookAt(CAMERA_DISTANCE / 2, 0, 0); 
             
-            // Fixed 45-degree down tilt view
-            const cameraDistance = 200;
-            camera.position.set(cameraDistance, cameraDistance * 0.7, cameraDistance);
-            camera.lookAt(0, 0, 0); 
-            
-            // Renderer
+            // --- Renderer ---
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             document.body.appendChild(renderer.domElement);
 
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 5); // soft white light
-            scene.add(ambientLight);
+            // --- Lighting ---
+            scene.add(new THREE.AmbientLight(0x404040, 5)); 
 
             const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
             directionalLight.position.set(200, 300, 200);
             directionalLight.target.position.set(0, 0, 0);
             directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.width = 2048;
-            directionalLight.shadow.mapSize.height = 2048;
             scene.add(directionalLight);
 
-            // Load the environment model (success or failure triggers modelLoaded flag)
+            // --- Load Model ---
             loadModel(ENVIRONMENT_URL, initEnvironment, createDefaultEnvironment); 
 
-            // Event Listeners
+            // --- Event Listeners ---
             window.addEventListener('resize', onWindowResize);
             enterButton.addEventListener('click', handleEnter);
-            
-            // Add scroll listener for rotation
             window.addEventListener('wheel', onMouseWheel);
         }
 
-        // --- Event Handlers ---
+        // =======================================================================
+        // IV. EVENT HANDLERS AND GAME LOOP
+        // =======================================================================
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -202,41 +215,38 @@
             // Prevent page scrolling when interacting with the 3D scene
             event.preventDefault(); 
 
-            // Determine rotation speed and direction
-            // event.deltaY is positive for scrolling down (typically)
-            const rotationSpeed = event.deltaY * 0.001;
-            
-            // Rotate the environment group around the Y-axis
-            environmentGroup.rotation.y += rotationSpeed;
+            // Rotate the environment group around the Y-axis using the scroll factor
+            // event.deltaY is positive for scrolling down (forward rotation)
+            const scrollRotation = event.deltaY * ROTATION_FACTOR;
+            environmentGroup.rotation.y += scrollRotation;
         }
 
         function handleEnter() {
             if (!modelsLoaded) return;
             
-            // Hide the enter screen UI
+            // Hide the enter screen UI and show instructions
             enterScreen.style.opacity = '0';
             setTimeout(() => {
                 enterScreen.style.display = 'none';
+                instructions.classList.remove('hidden');
                 isGameActive = true;
             }, 1000);
         }
 
-        // --- Animation Loop ---
-
         function animate() {
             requestAnimationFrame(animate);
 
-            if (isGameActive) {
-                // No continuous rotation needed, rotation is handled by scroll
+            if (isGameActive && environmentGroup) {
+                // Apply constant, slow rotation to the environment
+                environmentGroup.rotation.y += CONTINUOUS_ROTATION_SPEED;
             }
-            
+
             renderer.render(scene, camera);
         }
 
-        // Initialize on load
+        // --- Initialization ---
         window.onload = function () {
             init();
-            // Start the loop immediately
             animate(); 
         };
     </script>
