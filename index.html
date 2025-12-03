@@ -35,7 +35,7 @@
             <h1 class="text-4xl sm:text-6xl font-extrabold text-white mb-6 animate-pulse">
                 [ My 3D Portfolio ]
             </h1>
-            <p id="loading-status" class="text-white text-lg mb-4">Loading environment model... 0%</p>
+            <p id="loading-status" class="text-white text-lg mb-4">Loading models... 0%</p>
             <button id="enter-button" disabled class="px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-2xl transition-all duration-300 transform pointer-events-auto text-xl opacity-50 cursor-not-allowed">
                 Enter World
             </button>
@@ -60,19 +60,20 @@
         const CACHE_BUST = new Date().getTime(); 
         // Adding cache-buster to force the browser to check for the latest file
         const ENVIRONMENT_URL = BASE_URL + 'Environment.glb?v=' + CACHE_BUST;
+        const TRAIN_URL = BASE_URL + 'Train.glb?v=' + CACHE_BUST;
         
         // --- 3D Scene Constants ---
-        const ENVIRONMENT_SCALE = 30; // Scale factor for the imported GLB model
+        const MODEL_SCALE = 30; // Scale factor for the imported GLB models
         const CAMERA_DISTANCE = 500;  // Distance from the center of the scene
         const ROTATION_FACTOR = 0.0002; // Sensitivity of the scroll rotation
-        const CONTINUOUS_ROTATION_SPEED = -0.001; // Constant speed for background rotation
+        
         // --- Global Variables ---
-        let scene, camera, renderer, environmentGroup;
+        let scene, camera, renderer, environmentGroup; // environmentGroup holds all rotating elements
         let isGameActive = false;
         
         // --- Loading State ---
         let modelsLoaded = false;
-        const totalModels = 1;
+        const totalModels = 2; // Now loading Environment and Train
         let loadedCount = 0;
 
         // --- DOM Elements ---
@@ -93,7 +94,7 @@
             const percent = Math.floor((loadedCount / totalModels) * 100);
             loadingStatus.textContent = isFallback 
                 ? `Loaded (${percent}%). Using fallback geometry.`
-                : `Loading environment model... ${percent}%`;
+                : `Loading models... ${percent}%`;
             
             if (loadedCount === totalModels) {
                 modelsLoaded = true;
@@ -130,14 +131,23 @@
             environmentGroup.add(fallbackMesh);
         }
 
-        function initEnvironment(model) {
-            // Create a central group to hold and rotate the model
-            environmentGroup = new THREE.Group();
-            scene.add(environmentGroup);
+        function createDefaultTrain() {
+            // Fallback to a simple cube for the train
+            const geometry = new THREE.BoxGeometry(15, 15, 15);
+            const material = new THREE.MeshLambertMaterial({ color: 0xff4d4d }); // Red color
+            const fallbackMesh = new THREE.Mesh(geometry, material);
+            fallbackMesh.position.y = 25; // Lift slightly above the center plane
+            fallbackMesh.receiveShadow = true;
+            fallbackMesh.castShadow = true;
 
+            environmentGroup.add(fallbackMesh);
+        }
+
+
+        function initEnvironmentModel(model) {
             if (model) {
                 // Apply scale and setup shadows for the loaded GLB model
-                model.scale.set(ENVIRONMENT_SCALE, ENVIRONMENT_SCALE, ENVIRONMENT_SCALE);
+                model.scale.set(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
                 model.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = true;
@@ -149,9 +159,24 @@
                 // If model failed to load, use the fallback
                 createDefaultEnvironment();
             }
+        }
 
-            // Set initial rotation (45 degrees) to match camera angle
-            environmentGroup.rotation.y = Math.PI / 4;
+        function initTrainModel(model) {
+            if (model) {
+                // Apply scale and setup shadows for the loaded GLB model
+                // Note: Train scale might need individual adjustment
+                model.scale.set(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE); 
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                environmentGroup.add(model);
+            } else {
+                // If model failed to load, use the fallback
+                createDefaultTrain();
+            }
         }
 
         // =======================================================================
@@ -163,6 +188,13 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a2e); // Dark background
 
+            // --- Rotation Group Initialization ---
+            // This group is added early so we can add models to it during loading
+            environmentGroup = new THREE.Group();
+            scene.add(environmentGroup);
+            // Set initial rotation (45 degrees) to match camera angle
+            environmentGroup.rotation.y = Math.PI / 4;
+
             // --- Camera ---
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
             // Fixed position for 45-degree down tilt view
@@ -172,7 +204,7 @@
                 CAMERA_DISTANCE
             );
             // Adjusted lookAt to center the view better
-            camera.lookAt(CAMERA_DISTANCE / 2, 0, 0); 
+            camera.lookAt(0, 0, 0); 
             
             // --- Renderer ---
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -190,8 +222,9 @@
             directionalLight.castShadow = true;
             scene.add(directionalLight);
 
-            // --- Load Model ---
-            loadModel(ENVIRONMENT_URL, initEnvironment, createDefaultEnvironment); 
+            // --- Load Models ---
+            loadModel(ENVIRONMENT_URL, initEnvironmentModel, createDefaultEnvironment); 
+            loadModel(TRAIN_URL, initTrainModel, createDefaultTrain); 
 
             // --- Event Listeners ---
             window.addEventListener('resize', onWindowResize);
@@ -215,7 +248,7 @@
             // Prevent page scrolling when interacting with the 3D scene
             event.preventDefault(); 
 
-            // Rotate the environment group around the Y-axis using the scroll factor
+            // Rotate the environment group (containing both environment and train)
             // event.deltaY is positive for scrolling down (forward rotation)
             const scrollRotation = event.deltaY * ROTATION_FACTOR;
             environmentGroup.rotation.y += scrollRotation;
@@ -236,10 +269,8 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            if (isGameActive && environmentGroup) {
-                // Apply constant, slow rotation to the environment
-                environmentGroup.rotation.y += CONTINUOUS_ROTATION_SPEED;
-            }
+            // REMOVED: Continuous rotation logic. 
+            // Rotation is now purely driven by the 'onMouseWheel' event handler.
 
             renderer.render(scene, camera);
         }
